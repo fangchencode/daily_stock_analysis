@@ -1,0 +1,8 @@
+- name: Auto Sync Fork
+  uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
+  with:
+    upstream_sync_repo: ZhuLinsen/daily_stock_analysis
+    upstream_sync_branch: main
+    target_sync_branch: main
+    github_token: ${{ secrets.GITHUB_TOKEN }}
+    # 该 Action 已内置 --allow-unrelated-histories 处理，无需额外配置
