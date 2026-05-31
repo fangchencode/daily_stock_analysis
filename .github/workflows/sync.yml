@@ -16,6 +16,11 @@ jobs:
 
       - name: Sync upstream
         run: |
+          rsync -av --delete \
+            --exclude='.git/' \
+            --exclude='.github/workflows/' \
+            /tmp/upstream/ ./
+            
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
