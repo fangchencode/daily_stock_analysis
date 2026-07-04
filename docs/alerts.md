@@ -338,10 +338,15 @@ P6 不做：
 - `AlertTriggerItem` 保留 `diagnostics` 字符串，并新增派生字段 `market_phase_summary`、`analysis_context_pack_overview`、`analysis_visibility_source`。
 - 真实 `status=triggered` 的 worker 记录会在 JSON diagnostics 中合并 sibling key `analysis_visibility`，包含 `market_phase_summary`、`analysis_context_pack_overview`、`source`。旧纯文本 diagnostics 保留原文，API 派生字段返回 `null`，source 返回 `legacy_text`。
 - `analysis_visibility_source` 取值为 `alert_trigger_market_context`、`analysis_history_snapshot`、`evaluator_snapshot`、`legacy_text` 或 `null`。
-- symbol 目标使用 `get_market_for_stock(normalize_stock_code(effective_target))` 构造触发时 phase；`target_scope=market` 直接用 `normalize_market_region(target)`，不会把 `cn|hk|us` 当作股票代码推断；账户级无法唯一定位市场时允许 summary 落为 `unknown`。
+- symbol 目标使用 `get_market_for_stock(normalize_stock_code(effective_target))` 构造触发时 phase；`target_scope=market` 直接用 `normalize_market_region(target)`，不会把 `cn|hk|us|jp|kr` 当作股票代码推断；账户级无法唯一定位市场时允许 summary 落为 `unknown`。
 - `analysis_context_pack_overview` 只来自 evaluator 已带 overview 或最近 30 天内的历史 snapshot。最近历史查询复用历史服务的代码变体候选，并以 best-effort + 批内短缓存方式执行；缺失或解析失败返回 `null`，不伪造 pack。
 - 告警通知只输出公开摘要：阶段标签、trigger source、partial-bar warning、数据质量等级和前两条 limitations。通知不得输出 raw context pack、Prompt、新闻正文、完整 diagnostics JSON、webhook URL、token 或持仓敏感细节。
 - Web 告警历史展示 phase badge、数据质量等级和 limitations 空态；旧触发记录缺少公开摘要时不影响列表读取。
+- #1390 P6 进一步复用 `DecisionSignal`：股票级真实触发会优先关联同标的 latest active 信号，并把低敏 `decision_signal_summary` 写入 diagnostics；无 active 信号时只创建最小 `source_type=alert/action=alert` 信号。`trace_id=alert-rule-<hash>` 只用于同源重试的 best-effort 幂等去重，不覆盖 active 信号；新建告警信号不写 `market_phase`，避免同一规则跨阶段重复创建。`market`、`portfolio_account`、overflow 或无法解析为具体股票的触发不会创建个股信号。
+
+DecisionSignal 字段、脱敏、迁移与回滚边界见 [DecisionSignal 决策信号专题](decision-signals.md)。
+
+#1386 P7 的用户边界：告警联动只解释触发时已经可公开的阶段和数据质量摘要，不会自动发起轻量 LLM 盘中分析，也不会新增告警表、规则类型、环境变量或 migration。需要阶段化分析时，仍应通过分析 API / Web 手动分析入口触发；告警通知只保留阶段标签、trigger source、partial-bar warning、数据质量等级和前两条 limitations。
 
 回滚本联动只需要 revert 对 worker/API/Web 的改动；已有 `diagnostics.analysis_visibility` 会作为普通 JSON diagnostics 保留，旧代码不会读取该 sibling key。
 
@@ -353,10 +358,10 @@ P7 在现有 Alert API、Web 告警中心和 `src/services/alert_worker.py` 中�
 
 | `target_scope` | `target` | 允许的 `alert_type` | 参数 | 触发语义 |
 | --- | --- | --- | --- | --- |
-| `market` | `cn` / `hk` / `us` | `market_light_status` | `statuses=["red","yellow"]`，只允许 `red/yellow`，默认 `["red","yellow"]` | 当前 `MarketLightSnapshot.status` 命中列表时触发 |
-| `market` | `cn` / `hk` / `us` | `market_light_score_drop` | `min_drop > 0` | `prev.score - current.score >= min_drop`，且 `prev.trade_date < current.trade_date` |
+| `market` | `cn` / `hk` / `us` / `jp` / `kr` | `market_light_status` | `statuses=["red","yellow"]`，只允许 `red/yellow`，默认 `["red","yellow"]` | 当前 `MarketLightSnapshot.status` 命中列表时触发 |
+| `market` | `cn` / `hk` / `us` / `jp` / `kr` | `market_light_score_drop` | `min_drop > 0` | `prev.score - current.score >= min_drop`，且 `prev.trade_date < current.trade_date` |
 
-scope/type 校验是双向约束：`target_scope=market` 只能使用两类 Market Light 规则；`market_light_*` 规则也只能使用 `target_scope=market`。`target` 会 `strip().lower()` 后严格限定为 `cn|hk|us`，非法 target 返回 HTTP 400 + `validation_error`。
+scope/type 校验是双向约束：`target_scope=market` 只能使用两类 Market Light 规则；`market_light_*` 规则也只能使用 `target_scope=market`。`target` 会 `strip().lower()` 后严格限定为 `cn|hk|us|jp|kr`，非法 target 返回 HTTP 400 + `validation_error`。
 
 ### `MarketLightSnapshot` 契约
 
